@@ -4,11 +4,14 @@
 /node_modules
 /.pnp
 .pnp.*
+
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
+.yarn
 !.yarn/versions
+.wrangler
 
 # testing
 /coverage
@@ -35,6 +38,7 @@ yarn-error.log*
 
 # vercel
 .vercel
+.open-next
 
 # typescript
 *.tsbuildinfo
