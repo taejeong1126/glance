@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">glance</string>
+    <string name="glucose_value_complication_label">혈당값</string>
+    <string name="glucose_trend_complication_label">혈당 추세</string>
+    <string name="glucose_value_trend_complication_label">혈당값 + 추세</string>
+    <string name="glucose_range_complication_label">혈당 게이지 + 혈당 값</string>
 </resources>

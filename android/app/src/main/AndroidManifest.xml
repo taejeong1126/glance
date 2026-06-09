@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-feature android:name="android.hardware.type.watch"  android:required="true" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
       android:name=".MainApplication"
@@ -23,5 +26,73 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+      <service
+        android:name=".GlucoseForegroundService"
+        android:exported="false"
+        android:foregroundServiceType="dataSync" />
+      <service
+        android:name=".GlucoseValueComplicationService"
+        android:exported="true"
+        android:icon="@drawable/ic_glucose_complication"
+        android:label="@string/glucose_value_complication_label"
+        android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+        <intent-filter>
+          <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+        </intent-filter>
+        <meta-data
+          android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+          android:value="SHORT_TEXT" />
+        <meta-data
+          android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+          android:value="300" />
+      </service>
+      <service
+        android:name=".GlucoseTrendComplicationService"
+        android:exported="true"
+        android:icon="@drawable/ic_glucose_complication"
+        android:label="@string/glucose_trend_complication_label"
+        android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+        <intent-filter>
+          <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+        </intent-filter>
+        <meta-data
+          android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+          android:value="SHORT_TEXT" />
+        <meta-data
+          android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+          android:value="300" />
+      </service>
+      <service
+        android:name=".GlucoseValueTrendComplicationService"
+        android:exported="true"
+        android:icon="@drawable/ic_glucose_complication"
+        android:label="@string/glucose_value_trend_complication_label"
+        android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+        <intent-filter>
+          <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+        </intent-filter>
+        <meta-data
+          android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+          android:value="SHORT_TEXT" />
+        <meta-data
+          android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+          android:value="300" />
+      </service>
+      <service
+        android:name=".GlucoseRangeComplicationService"
+        android:exported="true"
+        android:icon="@drawable/ic_glucose_complication"
+        android:label="@string/glucose_range_complication_label"
+        android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+        <intent-filter>
+          <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+        </intent-filter>
+        <meta-data
+          android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+          android:value="RANGED_VALUE" />
+        <meta-data
+          android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+          android:value="300" />
+      </service>
     </application>
 </manifest>
