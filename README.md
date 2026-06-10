@@ -28,8 +28,6 @@
 -   QR 기반 설정 플로우
 -   Watch Face Complication 지원
 
----
-
 ## 지원 소스
 
 -   **Dexcom**
@@ -39,8 +37,6 @@
 > xDrip+ Sync는 소켓 통신 기반으로 동작하며,  
 > Dexcom Share / Nightscout 방식과 동작 특성이 다를 수 있습니다.
 
----
-
 ## 시작하기
 
 ### 필수 환경
@@ -49,8 +45,6 @@
 -   [Yarn](https://yarnpkg.com/) — 프로젝트 기본 패키지 관리자
 -   Android Studio
 -   Wear OS Emulator 또는 Wear OS 실기기
-
----
 
 ### 저장소 복제
 
@@ -65,8 +59,6 @@ cd glance
 yarn install
 ```
 
----
-
 ## 실행 방법
 
 ### Android 실행
@@ -77,8 +69,6 @@ yarn android
 
 > Wear OS 에뮬레이터 또는 연결된 워치가 필요합니다.
 
----
-
 ## 워치 표시 정보
 
 -   현재 혈당 값
@@ -87,14 +77,10 @@ yarn android
 -   최근 혈당 그래프
 -   Complication용 혈당 값 / 추세 / 게이지
 
----
-
 ## 피드백
 
 버그 제보, 개선 아이디어, 기능 제안은  
 GitHub Issues 또는 PR로 남겨주세요.
-
----
 
 ## 라이선스
 
