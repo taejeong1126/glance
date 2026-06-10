@@ -1,242 +1,111 @@
-# AGENTS.md
+# AGENTS.md — glance
 
-## Project
+> AI 에이전트 규칙 및 코드베이스 문서. 작업 완료 시 이 파일을 반드시 업데이트할 것.
 
-Glance is a Wear OS application built with React Native and TypeScript.
+## 프로젝트 개요
 
-The primary purpose of Glance is to display continuous glucose monitoring (CGM) data on Wear OS smartwatches.
+-   **이름**: glance
+-   **목적**: Wear OS 스마트워치에서 Dexcom, Nightscout, xDrip+ 등의 혈당 데이터를 실시간으로 확인할 수 있는 혈당 모니터링 애플리케이션
+-   **패키지 관리자**: yarn (사용 `yarn install`, 사용 X npm/pnpm)
+-   **제품의 언어**: 한국어 (UI 문자열, README, 커밋 메시지)
+-   **코드 언어**: 영어 (변수 이름, 함수 이름)
 
-Supported data sources:
+## 코드베이스 구조
 
--   Dexcom Share
--   CareSens Air
--   Nightscout
-
-Target devices:
-
--   Samsung Galaxy Watch series
--   Wear OS 4+
--   Wear OS 5+
-
----
-
-## Architecture
-
-Repository structure:
-
-```text
+```
 /
 ├─ android/
 ├─ src/
-├─ App.tsx
 ├─ package.json
-└─ setup-web/
+└─ web/
 ```
 
-### Mobile App
+### 모바일 앱
 
-Technology:
+#### 기술 스택
 
 -   React Native
--   TypeScript
 
-Responsibilities:
+#### 주요 기능
 
--   Display current glucose value
--   Display glucose trend
--   Display glucose graph
--   Manage settings
--   QR setup flow
--   Future support for Tiles
--   Future support for Watch Faces
--   Future support for Complications
+-   현재 혈당 수치 표시
+-   혈당 추세 표시
+-   혈당 그래프 표시
+-   설정 관리
+-   QR 기반 설정 플로우
+-   Tiles 지원
+-   Watch Face 지원
+-   Complication 지원
 
-### Setup Web
+### 설정 웹
 
-Location:
-
-```text
-setup-web/
-```
-
-Technology:
+#### 기술 스택
 
 -   Next.js
 -   TypeScript
 -   Vercel
 
-Responsibilities:
+#### 주요 기능
 
--   Configuration UI
--   QR onboarding flow
--   Temporary session handling
--   Device pairing
+-   설정 UI 제공
+-   QR 기반 온보딩 플로우
+-   임시 세션 관리
+-   디바이스 페어링
 
-No glucose data should be permanently stored on the web service.
+## 코딩 규칙
 
----
+### 일반
 
-## QR Setup Flow
-
-1. Watch generates a session ID.
-2. Watch displays a QR code.
-3. User scans the QR code with a phone.
-4. User enters configuration values.
-5. Configuration is temporarily stored.
-6. Watch polls for configuration completion.
-7. Watch stores configuration locally.
-8. Temporary server-side configuration is deleted.
-
-The server acts only as a temporary transport layer.
-
----
-
-## Coding Standards
-
-### General
-
--   Use TypeScript.
--   Prefer functional components.
--   Prefer React Hooks.
--   Avoid class components.
--   Keep components small and focused.
+-   TypeScript를 사용한다.
+-   함수형 컴포넌트를 선호한다.
+-   React Hooks를 선호한다.
+-   클래스형 컴포넌트는 지양한다.
+-   컴포넌트는 작고 단일 책임을 갖도록 유지한다.
 
 ### React Native
 
-Preferred:
+-   **권장 스타일**:
 
 ```tsx
 const styles = StyleSheet.create({...});
 ```
 
-Avoid excessive inline styles.
-
-Use:
+-   **스타일 원칙**: 과도한 인라인 스타일 사용은 피한다.
+-   **권장 라이브러리**: 적절한 경우 다음 라이브러리를 사용한다.
 
 -   react-native-safe-area-context
 -   react-native-svg
 
-when appropriate.
+## UI 원칙
 
-### File Naming
+-   **화면 특성**: Wear OS 화면은 작다.
+-   **우선순위**:
 
-Components:
+1. 현재 혈당 수치
+2. 추세 방향
+3. 변화량(Delta)
+4. 그래프
 
-```text
-CurrentGlucoseCard.tsx
-TrendIndicator.tsx
-SetupQrScreen.tsx
-```
+-   **구성 원칙**: 불필요한 UI 요소는 피한다.
+-   **가독성 원칙**: 큰 글씨와 높은 가독성을 우선한다.
+-   **디자인 기준**: 원형 디스플레이를 기준으로 디자인한다.
 
-Hooks:
+## 성능 요구사항
 
-```text
-useNightscout.ts
-useGlucoseData.ts
-```
+-   불필요한 렌더링을 최소화한다.
+-   네트워크 사용량을 최소화한다.
+-   데이터 변경이 없을 경우 과도한 폴링을 피한다.
+-   배터리 사용량을 최적화한다.
+-   혈당 업데이트가 워치 배터리에 유의미한 영향을 주어서는 안 된다.
 
-Types:
+## 에이전트 가이드라인
 
-```text
-glucose.ts
-settings.ts
-```
+-   **코드 수정 원칙**:
 
----
+-   TypeScript 타입을 유지한다.
+-   불필요한 의존성을 추가하지 않는다.
+-   설정 플로우를 단순하게 유지한다.
+-   기능 복잡성보다 안정성을 우선한다.
+-   Wear OS 사용성을 최우선으로 고려한다.
 
-## Data Models
-
-Example:
-
-```ts
-export interface GlucoseReading {
-    value: number;
-    trend: string;
-    timestamp: string;
-}
-```
-
----
-
-## UI Principles
-
-Wear OS screens are small.
-
-Priorities:
-
-1. Current glucose value
-2. Trend direction
-3. Delta value
-4. Graph
-
-Avoid unnecessary UI elements.
-
-Prefer large readable text.
-
-Design for round displays first.
-
----
-
-## Development Environment
-
-Primary platform:
-
--   Windows 11
-
-Primary editor:
-
--   VS Code
-
-Device testing:
-
--   Samsung Galaxy Watch5
-
-Android Studio is not required for development.
-
-ADB over Wi-Fi is supported.
-
----
-
-## Performance Requirements
-
--   Minimize unnecessary renders.
--   Minimize network usage.
--   Avoid frequent polling when data is unchanged.
--   Optimize battery consumption.
-
-Glucose updates should not significantly impact watch battery life.
-
----
-
-## Security
-
-Never commit:
-
--   API secrets
--   Access tokens
--   Environment files
-
-Use:
-
-```text
-.env.local
-.env
-```
-
-for local development only.
-
-Sensitive configuration should be stored securely on-device.
-
----
-
-## Agent Guidelines
-
-When modifying code:
-
--   Preserve TypeScript types.
--   Avoid introducing unnecessary dependencies.
--   Keep the setup flow simple.
--   Prioritize reliability over feature complexity.
--   Optimize for Wear OS usability.
-
-The primary goal is fast, reliable glucose visibility on the watch.
+-   **최우선 목표**: 워치에서 혈당 정보를 빠르고 안정적으로 확인할 수 있도록 한다.
