@@ -401,11 +401,19 @@ object XdripSyncClient : GlucoseClient {
     val bg = JSONObject(plain.toString(Charsets.UTF_8))
     val value = bg.optDouble("calculated_value", 0.0)
     if (value <= 0.0) return null
+    val trend = listOf(
+      bg.optString("slope_name"),
+      bg.optString("slopeName"),
+      bg.optString("direction"),
+      bg.optString("trend"),
+      bg.optString("trend_arrow"),
+      bg.optString("trendArrow"),
+    ).firstOrNull { it.isNotBlank() }
 
     return GlucoseReading(
       value = Math.round(value).toInt(),
       timestampMillis = normalizeEpochMillis(bg.optLong("timestamp", System.currentTimeMillis())),
-      trend = bg.optString("slope_name").ifBlank { null },
+      trend = trend?.takeIf { it.isNotBlank() },
       source = "xdripSync",
     )
   }

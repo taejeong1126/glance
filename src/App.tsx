@@ -16,8 +16,13 @@ type GlucoseConfig =
 
 const SETUP_BASE_URL = 'https://glance.taejeong.xyz';
 const GRAPH_RANGES = [30, 60, 120, 240] as const;
-const STALE_READING_MILLIS = 10 * 60 * 1000;
+const STALE_READING_MILLIS = 15 * 60 * 1000;
 const CACHE_REFRESH_MILLIS = 5_000;
+const GRAPH_HISTORY_PADDING_MINUTES = 10;
+
+function clamp(value: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, value));
+}
 
 function formatDelta(reading: NativeGlucoseReading | null, history: NativeGlucoseReading[]) {
     if (!reading || history.length < 2) {
@@ -202,7 +207,7 @@ function App() {
 
         const loadNativeHistory = async () => {
             try {
-                const nativeHistory = await glucoseSync.getHistory(GRAPH_RANGES[rangeIndex]);
+                const nativeHistory = await glucoseSync.getHistory(Math.min(240, GRAPH_RANGES[rangeIndex] + GRAPH_HISTORY_PADDING_MINUTES));
                 const status = await glucoseSync.getStatus();
                 const latest = nativeHistory[nativeHistory.length - 1];
 
@@ -278,42 +283,77 @@ function App() {
         return <AppInfoScreen onBack={() => setShowDeveloperInfo(false)} />;
     }
 
-    const contentScale = Math.min(1.3, Math.max(0.75, Math.min(width / 220, height / 280) * 1));
+    const contentScale = clamp(Math.min(width / 220, height / 280), 0.75, 1.3);
+    const scaleSize = (size: number, min: number, max: number) => clamp(size * contentScale, min, max);
+    const readingContentWidth = 250 * contentScale;
+    const readingContentHeight = 230 * contentScale;
+    const graphWidth = 250 * contentScale;
+    const graphHeight = 120 * contentScale;
+    const menuButtonHeight = scaleSize(40, 34, 52);
+    const connectionTitleSize = scaleSize(12, 10, 15);
+    const connectionValueSize = scaleSize(10, 8.5, 13);
+    const menuButtonTextSize = scaleSize(11, 9.5, 14);
+    const versionTextSize = scaleSize(9.5, 8, 12);
+    const sourceTextSize = scaleSize(18, 14, 24);
+    const updatedTextSize = scaleSize(10.5, 9, 14);
+    const glucoseTextSize = scaleSize(60, 44, 78);
+    const deltaTextSize = scaleSize(11, 9.5, 14);
+    const statusTextSize = scaleSize(17, 14, 23);
+    const urlTextSize = scaleSize(11, 9.5, 14);
     const isReadingStale = reading ? Date.now() - reading.timestampMillis > STALE_READING_MILLIS : false;
     const connectedSource = config.source === 'nightscout' ? 'Nightscout' : config.source === 'xdripSync' ? 'xDrip Sync' : 'Dexcom';
 
     return (
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             <View style={[styles.mainPage, { minHeight: height }]}>
-                <View style={[styles.readingContent, { transform: [{ scale: contentScale }] }]}>
+                <View style={[styles.readingContent, { height: readingContentHeight, width: readingContentWidth }]}>
                     {reading ? (
                         <>
-                            <Text style={[styles.updatedText, isReadingStale && styles.staleUpdatedText]}>{formatKstUpdatedAt(reading.timestampMillis)}</Text>
-                            <Text style={[styles.glucoseText, { transform: [{ scaleY: 0.85 }] }]}>{reading.value}</Text>
-                            <Text style={styles.deltaText}>{formatDelta(reading, history)}</Text>
-                            <Pressable style={styles.graph} onPress={() => setRangeIndex((value) => (value + 1) % GRAPH_RANGES.length)}>
-                                <GlucoseGraph readings={history} rangeMinutes={GRAPH_RANGES[rangeIndex]} />
+                            <Text
+                                style={[
+                                    styles.updatedText,
+                                    { fontSize: updatedTextSize, lineHeight: updatedTextSize * 1.9 },
+                                    isReadingStale && styles.staleUpdatedText
+                                ]}
+                            >
+                                {formatKstUpdatedAt(reading.timestampMillis)}
+                            </Text>
+                            <Text
+                                style={[styles.glucoseText, { fontSize: glucoseTextSize, lineHeight: glucoseTextSize * 0.92, transform: [{ scaleY: 0.85 }] }]}
+                            >
+                                {reading.value}
+                            </Text>
+                            <Text style={[styles.deltaText, { fontSize: deltaTextSize, lineHeight: deltaTextSize * 1.8 }]}>
+                                {formatDelta(reading, history)}
+                            </Text>
+                            <Pressable
+                                style={[styles.graph, { height: graphHeight, width: graphWidth }]}
+                                onPress={() => setRangeIndex((value) => (value + 1) % GRAPH_RANGES.length)}
+                            >
+                                <View style={{ transform: [{ scale: contentScale }] }}>
+                                    <GlucoseGraph readings={history} rangeMinutes={GRAPH_RANGES[rangeIndex]} />
+                                </View>
                             </Pressable>
                         </>
                     ) : (
                         <View style={styles.statusContent}>
-                            <Text style={styles.sourceText}>
+                            <Text style={[styles.sourceText, { fontSize: sourceTextSize }]}>
                                 {config.source === 'nightscout' ? 'Nightscout' : config.source === 'xdripSync' ? 'xDrip Sync' : 'Dexcom'}
                             </Text>
-                            <Text style={styles.statusText}>{dataMessage}</Text>
-                            {config.source === 'nightscout' ? <Text style={styles.urlText}>{config.url}</Text> : null}
+                            <Text style={[styles.statusText, { fontSize: statusTextSize }]}>{dataMessage}</Text>
+                            {config.source === 'nightscout' ? <Text style={[styles.urlText, { fontSize: urlTextSize }]}>{config.url}</Text> : null}
                         </View>
                     )}
                 </View>
             </View>
             <View style={styles.menuSection}>
-                <Text style={styles.connectionTitle}>연결 정보</Text>
-                <Text style={styles.connectionValue}>{connectedSource}</Text>
-                <Pressable style={styles.menuButton} onPress={() => setShowDeveloperInfo(true)}>
-                    <Text style={styles.menuButtonText}>개발자 정보</Text>
+                <Text style={[styles.connectionTitle, { fontSize: connectionTitleSize }]}>연결 정보</Text>
+                <Text style={[styles.connectionValue, { fontSize: connectionValueSize }]}>{connectedSource}</Text>
+                <Pressable style={[styles.menuButton, { height: menuButtonHeight }]} onPress={() => setShowDeveloperInfo(true)}>
+                    <Text style={[styles.menuButtonText, { fontSize: menuButtonTextSize }]}>개발자 정보</Text>
                 </Pressable>
                 <Pressable
-                    style={[styles.menuButton, confirmDisconnect && styles.disconnectConfirmButton]}
+                    style={[styles.menuButton, { height: menuButtonHeight }, confirmDisconnect && styles.disconnectConfirmButton]}
                     onPress={async () => {
                         if (!confirmDisconnect) {
                             setConfirmDisconnect(true);
@@ -323,11 +363,11 @@ function App() {
                         await disconnect();
                     }}
                 >
-                    <Text style={[styles.menuButtonText, confirmDisconnect && styles.disconnectConfirmText]}>
+                    <Text style={[styles.menuButtonText, { fontSize: menuButtonTextSize }, confirmDisconnect && styles.disconnectConfirmText]}>
                         {confirmDisconnect ? '한 번 더 눌러 연결 해제' : '연결 해제'}
                     </Text>
                 </Pressable>
-                <Text style={styles.versionText}>Glance v{packageJson.version}</Text>
+                <Text style={[styles.versionText, { fontSize: versionTextSize }]}>Glance v{packageJson.version}</Text>
             </View>
         </ScrollView>
     );

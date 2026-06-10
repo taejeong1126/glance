@@ -19,6 +19,7 @@ const LOW_LINE = 70;
 const LOW_COLOR = '#ef4444';
 const NORMAL_COLOR = '#2dd4bf';
 const HIGH_COLOR = '#facc15';
+const EDGE_EXTENSION_TOLERANCE_MS = 6 * 60_000;
 
 type GraphPoint = {
     x: number;
@@ -69,11 +70,49 @@ function splitSegmentAtThresholds(start: GraphPoint, end: GraphPoint) {
     });
 }
 
+function interpolateReadingAt(start: NativeGlucoseReading, end: NativeGlucoseReading, timestampMillis: number): NativeGlucoseReading {
+    const duration = end.timestampMillis - start.timestampMillis;
+
+    if (duration <= 0) {
+        return {
+            ...end,
+            timestampMillis
+        };
+    }
+
+    const ratio = (timestampMillis - start.timestampMillis) / duration;
+
+    return {
+        ...end,
+        timestampMillis,
+        value: start.value + (end.value - start.value) * ratio
+    };
+}
+
 export default function GlucoseGraph({ readings, rangeMinutes }: Props) {
     const latestTimestamp = readings[readings.length - 1]?.timestampMillis ?? Date.now();
     const from = latestTimestamp - rangeMinutes * 60_000;
     const visibleReadings = readings.filter((reading) => reading.timestampMillis >= from && reading.timestampMillis <= latestTimestamp);
-    const values = visibleReadings.map((reading) => reading.value);
+    const previousReading = [...readings].reverse().find((reading) => reading.timestampMillis < from);
+    const displayReadings = [...visibleReadings];
+
+    if (displayReadings.length > 0) {
+        const firstVisible = displayReadings[0];
+        const leadingGap = firstVisible.timestampMillis - from;
+
+        if (leadingGap > 0) {
+            if (previousReading) {
+                displayReadings.unshift(interpolateReadingAt(previousReading, firstVisible, from));
+            } else if (leadingGap <= EDGE_EXTENSION_TOLERANCE_MS) {
+                displayReadings.unshift({
+                    ...firstVisible,
+                    timestampMillis: from
+                });
+            }
+        }
+    }
+
+    const values = displayReadings.map((reading) => reading.value);
     const minValue = Math.max(40, Math.min(...values, LOW_LINE) - 20);
     const maxValue = Math.min(400, Math.max(...values, HIGH_LINE) + 20);
     const valueRange = Math.max(1, maxValue - minValue);
@@ -87,7 +126,7 @@ export default function GlucoseGraph({ readings, rangeMinutes }: Props) {
         return { x, y, value: reading.value };
     };
 
-    const graphPoints = visibleReadings.map(pointFor);
+    const graphPoints = displayReadings.map(pointFor);
     const segments = graphPoints.slice(0, -1).flatMap((point, index) => splitSegmentAtThresholds(point, graphPoints[index + 1]));
     const latest = visibleReadings[visibleReadings.length - 1];
     const timeLabels = Array.from({ length: 5 }, (_, index) => {

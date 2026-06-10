@@ -37,7 +37,7 @@ class GlucoseForegroundService : Service() {
       pollExecutor?.scheduleWithFixedDelay(
         { syncOnce() },
         0,
-        150,
+        DEFAULT_POLL_INTERVAL_SECONDS,
         TimeUnit.SECONDS,
       )
     }
@@ -192,7 +192,8 @@ class GlucoseForegroundService : Service() {
     const val KEY_LAST_ERROR = "last_error"
     const val KEY_LAST_SYNC_AT = "last_sync_at"
     const val KEY_XDRIP_DEBUG = "xdrip_debug"
-    private const val XDRIP_POLL_INTERVAL_SECONDS = 60L
+    private const val DEFAULT_POLL_INTERVAL_SECONDS = 220L
+    private const val XDRIP_POLL_INTERVAL_SECONDS = 100L
     private const val XDRIP_SNAPSHOT_TIMEOUT_MS = 20_000L
     private const val XDRIP_MAX_READING_AGE_MS = 6 * 60 * 60 * 1000L
     private const val XDRIP_FUTURE_TOLERANCE_MS = 2 * 60 * 1000L

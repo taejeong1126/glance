@@ -1,7 +1,12 @@
 package com.glance
 
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.graphics.drawable.Icon
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationType
+import androidx.wear.watchface.complications.data.MonochromaticImage
 import androidx.wear.watchface.complications.data.PlainComplicationText
 import androidx.wear.watchface.complications.data.RangedValueComplicationData
 import androidx.wear.watchface.complications.data.ShortTextComplicationData
@@ -11,6 +16,7 @@ import androidx.wear.watchface.complications.datasource.SuspendingComplicationDa
 private const val MIN_GLUCOSE = 40f
 private const val MAX_GLUCOSE = 400f
 private const val STALE_AFTER_MILLIS = 15 * 60 * 1000L
+private const val TREND_FALLBACK_WINDOW_MINUTES = 30
 
 class GlucoseValueComplicationService : SuspendingComplicationDataSourceService() {
   override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData =
@@ -30,7 +36,9 @@ class GlucoseValueComplicationService : SuspendingComplicationDataSourceService(
     return ShortTextComplicationData.Builder(
       text = PlainComplicationText.Builder(displayText).build(),
       contentDescription = PlainComplicationText.Builder(description).build(),
-    ).build()
+    )
+      .setTapAction(complicationTapAction())
+      .build()
   }
 }
 
@@ -55,7 +63,9 @@ class GlucoseTrendComplicationService : SuspendingComplicationDataSourceService(
     return ShortTextComplicationData.Builder(
       text = PlainComplicationText.Builder(displayText).build(),
       contentDescription = PlainComplicationText.Builder(description).build(),
-    ).build()
+    )
+      .setTapAction(complicationTapAction())
+      .build()
   }
 }
 
@@ -81,7 +91,9 @@ class GlucoseValueTrendComplicationService : SuspendingComplicationDataSourceSer
     return ShortTextComplicationData.Builder(
       text = PlainComplicationText.Builder(displayText).build(),
       contentDescription = PlainComplicationText.Builder(description).build(),
-    ).build()
+    )
+      .setTapAction(complicationTapAction())
+      .build()
   }
 }
 
@@ -108,6 +120,12 @@ class GlucoseRangeComplicationService : SuspendingComplicationDataSourceService(
       max = MAX_GLUCOSE,
       contentDescription = PlainComplicationText.Builder(description).build(),
     )
+      .setMonochromaticImage(
+        MonochromaticImage.Builder(
+          Icon.createWithResource(this, R.drawable.ic_glucose_complication),
+        ).build(),
+      )
+      .setTapAction(complicationTapAction())
       .setText(PlainComplicationText.Builder(displayText).build())
       .build()
   }
@@ -115,10 +133,31 @@ class GlucoseRangeComplicationService : SuspendingComplicationDataSourceService(
 
 private fun SuspendingComplicationDataSourceService.latestFreshReading(): GlucoseReading? =
     GlucoseHistoryStore(this).use { store ->
-      store.latest()?.takeIf {
+      val source = currentConfiguredSource()
+      val latest = store.latest(source)?.takeIf {
         System.currentTimeMillis() - it.timestampMillis <= STALE_AFTER_MILLIS
-      }
+      } ?: return@use null
+      val history = store.history(TREND_FALLBACK_WINDOW_MINUTES, source ?: latest.source)
+      latest.withFallbackTrend(history)
     }
+
+private fun SuspendingComplicationDataSourceService.complicationTapAction(): PendingIntent =
+  PendingIntent.getActivity(
+    this,
+    0,
+    Intent(this, MainActivity::class.java).apply {
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    },
+    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+  )
+
+private fun SuspendingComplicationDataSourceService.currentConfiguredSource(): String? =
+  parseGlucoseConfig(
+    getSharedPreferences(
+      GlucoseForegroundService.PREFS_NAME,
+      Context.MODE_PRIVATE,
+    ).getString(GlucoseForegroundService.KEY_CONFIG_JSON, null),
+  )?.sourceName()
 
 private fun previewReading() =
   GlucoseReading(
@@ -128,26 +167,64 @@ private fun previewReading() =
     source = "preview",
   )
 
+private fun GlucoseReading.withFallbackTrend(history: List<GlucoseReading>): GlucoseReading {
+  if (!trend.isNullOrBlank()) return this
+  val inferredTrend = inferTrend(history) ?: return this
+  return copy(trend = inferredTrend)
+}
+
+private fun inferTrend(history: List<GlucoseReading>): String? {
+  if (history.size < 2) return null
+
+  val latest = history[history.lastIndex]
+  val previous = history[history.lastIndex - 1]
+  val minutes = (latest.timestampMillis - previous.timestampMillis) / 60_000.0
+
+  if (minutes <= 0.0) return null
+
+  val deltaPerMinute = (latest.value - previous.value) / minutes
+
+  return when {
+    deltaPerMinute >= 3.0 -> "DoubleUp"
+    deltaPerMinute >= 2.0 -> "SingleUp"
+    deltaPerMinute >= 1.0 -> "FortyFiveUp"
+    deltaPerMinute > -1.0 -> "Flat"
+    deltaPerMinute > -2.0 -> "FortyFiveDown"
+    deltaPerMinute > -3.0 -> "SingleDown"
+    else -> "DoubleDown"
+  }
+}
+
 private fun trendArrow(trend: String?): String =
-  when (trend?.lowercase()) {
-    "doubleup", "double_up", "rapidlyrising" -> "⇈"
-    "singleup", "single_up", "rising" -> "↑"
-    "fortyfiveup", "forty_five_up", "risingquickly" -> "↗"
-    "flat", "steady" -> "→"
-    "fortyfivedown", "forty_five_down", "fallingquickly" -> "↘"
-    "singledown", "single_down", "falling" -> "↓"
-    "doubledown", "double_down", "rapidlyfalling" -> "⇊"
+  when (normalizeTrend(trend)) {
+    "doubleup", "double_up", "rapidlyrising" -> "⏫"
+    "singleup", "single_up", "rising" -> "⬆"
+    "fortyfiveup", "forty_five_up", "45up", "risingquickly" -> "⬈"
+    "flat", "steady" -> "➡"
+    "fortyfivedown", "forty_five_down", "45down", "fallingquickly" -> "⬊"
+    "singledown", "single_down", "falling" -> "⬇"
+    "doubledown", "double_down", "rapidlyfalling" -> "⏬"
     else -> ""
   }
 
+private fun normalizeTrend(trend: String?): String =
+  trend
+    ?.trim()
+    ?.lowercase()
+    ?.replace(" ", "")
+    ?.replace("-", "")
+    ?.replace("/", "")
+    ?.replace("_", "_")
+    ?: ""
+
 private fun trendDescription(trend: String?): String =
   when (trendArrow(trend)) {
-    "⇈" -> "빠르게 상승"
-    "↑" -> "상승"
-    "↗" -> "완만한 상승"
-    "→" -> "유지"
-    "↘" -> "완만한 하락"
-    "↓" -> "하락"
-    "⇊" -> "빠르게 하락"
+    "⏫" -> "빠르게 상승"
+    "⬆" -> "상승"
+    "⬈" -> "완만한 상승"
+    "➡" -> "유지"
+    "⬊" -> "완만한 하락"
+    "⬇" -> "하락"
+    "⏬" -> "빠르게 하락"
     else -> "알 수 없음"
   }

@@ -1,7 +1,10 @@
 package com.glance
 
+import android.content.ComponentName
 import android.content.Intent
 import android.content.Context
+import android.view.WindowManager
+import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -66,6 +69,7 @@ class GlucoseSyncModule(
             store.upsert(readings)
             store.deleteOlderThan(System.currentTimeMillis() - 6 * 60 * 60 * 1000L)
           }
+          requestComplicationUpdates()
         }
 
         prefs.edit()
@@ -126,6 +130,22 @@ class GlucoseSyncModule(
     )
   }
 
+  @ReactMethod
+  fun enableKeepScreenOn() {
+    val activity = reactContext.currentActivity ?: return
+    activity.runOnUiThread {
+      activity.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+  }
+
+  @ReactMethod
+  fun disableKeepScreenOn() {
+    val activity = reactContext.currentActivity ?: return
+    activity.runOnUiThread {
+      activity.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+  }
+
   private fun GlucoseReading.toMap(): WritableNativeMap =
     WritableNativeMap().apply {
       putInt("value", value)
@@ -146,5 +166,19 @@ class GlucoseSyncModule(
 
     return parseGlucoseConfig(prefs.getString(GlucoseForegroundService.KEY_CONFIG_JSON, null))
       ?.sourceName()
+  }
+
+  private fun requestComplicationUpdates() {
+    listOf(
+      GlucoseValueComplicationService::class.java,
+      GlucoseTrendComplicationService::class.java,
+      GlucoseValueTrendComplicationService::class.java,
+      GlucoseRangeComplicationService::class.java,
+    ).forEach { serviceClass ->
+      ComplicationDataSourceUpdateRequester.create(
+        reactContext,
+        ComponentName(reactContext, serviceClass),
+      ).requestUpdateAll()
+    }
   }
 }

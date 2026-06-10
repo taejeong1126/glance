@@ -17,6 +17,8 @@ type GlucoseSyncModule = {
     start(): void;
     stop(): void;
     clear(): void;
+    enableKeepScreenOn(): void;
+    disableKeepScreenOn(): void;
     refreshNow(): Promise<number>;
     getLatest(): Promise<NativeGlucoseReading | null>;
     getHistory(minutes: number): Promise<NativeGlucoseReading[]>;
@@ -40,4 +42,12 @@ export function startNativeGlucoseSync(config: GlucoseConfig) {
 
 export function clearNativeGlucoseSync() {
     GlucoseSync?.clear();
+}
+
+export function enableKeepScreenOn() {
+    GlucoseSync?.enableKeepScreenOn();
+}
+
+export function disableKeepScreenOn() {
+    GlucoseSync?.disableKeepScreenOn();
 }
