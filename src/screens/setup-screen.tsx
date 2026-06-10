@@ -1,7 +1,17 @@
+import { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
+import { disableKeepScreenOn, enableKeepScreenOn } from '../native/glucose-sync';
 
 function SetupScreen({ setupUrl }: { setupUrl: string }) {
+    useEffect(() => {
+        enableKeepScreenOn();
+
+        return () => {
+            disableKeepScreenOn();
+        };
+    }, []);
+
     return (
         <View style={styles.container}>
             <View style={styles.qrFrame}>

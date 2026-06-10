@@ -21,7 +21,7 @@ export default function AppInfoScreen({ onBack }: Props) {
     return (
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
             <View style={styles.profile}>
-                <Image source={require('../assets/developer-profile.png')} style={styles.avatar} />
+                <Image source={require('../assets/developer-profile.jpg')} style={styles.avatar} />
                 <Text style={styles.name}>김태정</Text>
             </View>
 
