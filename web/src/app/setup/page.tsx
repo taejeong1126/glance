@@ -153,6 +153,10 @@ function SetupForm() {
                                         value={password}
                                     />
                                 </Field>
+
+                                <div className="text-sm">
+                                    현재 <strong>미국 외 지역(ous)</strong> 에서 생성된 Dexcom 계정만 사용할 수 있습니다. <strong>(jp 불가)</strong>
+                                </div>
                             </>
                         ) : null}
 
@@ -161,6 +165,7 @@ function SetupForm() {
                                 <div className="rounded-lg bg-zinc-100 px-3 py-3 text-sm leading-6 text-zinc-700">
                                     xDrip+ 앱에서 <strong>User Xdrip Cloud</strong>를 활성화하고 <strong>마스터</strong>를 활성화해 주세요.
                                 </div>
+
                                 <Field label="xDrip+ 핸드셋 그룹 키" hint="xDrip Sync에서 사용하는 그룹 키를 입력하세요.">
                                     <input
                                         autoCapitalize="characters"
@@ -173,6 +178,13 @@ function SetupForm() {
                                         value={groupKey}
                                     />
                                 </Field>
+
+                                <div className="text-sm">
+                                    <strong>xDrip+ Sync</strong>는 소켓 통신 방식의 특성상 Dexcom Share, Nightscout 등의 연동 방식보다{' '}
+                                    <strong>배터리 사용량</strong>이 많을 수 있습니다.
+                                    <br />
+                                    또한 여러 기기를 동시에 연결할 경우 데이터 수신이 지연되거나 불안정해질 수 있습니다.
+                                </div>
                             </>
                         ) : null}
                     </div>
