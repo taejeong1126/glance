@@ -6,6 +6,7 @@ on:
 
 jobs:
     sync:
+        if: github.repository == 'taejeong-labs/glance'
         name: Sync forked repo
         runs-on: ubuntu-latest
 
