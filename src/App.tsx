@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, AppState, type AppStateStatus, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import * as Keychain from 'react-native-keychain';
 
 import packageJson from '../package.json';
@@ -19,6 +19,7 @@ const GRAPH_RANGES = [30, 60, 120, 240] as const;
 const STALE_READING_MILLIS = 15 * 60 * 1000;
 const CACHE_REFRESH_MILLIS = 5_000;
 const GRAPH_HISTORY_PADDING_MINUTES = 10;
+const KEYCHAIN_SERVICES = ['glance.dexcom', 'glance.nightscout', 'glance.xdripSync'] as const;
 
 function clamp(value: number, min: number, max: number) {
     return Math.min(max, Math.max(min, value));
@@ -46,6 +47,38 @@ function formatDelta(reading: NativeGlucoseReading | null, history: NativeGlucos
     return `${delta.toFixed(1)} mg/dL/min`;
 }
 
+async function resetStoredConfigs() {
+    await Promise.all(
+        KEYCHAIN_SERVICES.map((service) =>
+            Keychain.resetGenericPassword({
+                service
+            }).catch(() => false)
+        )
+    );
+}
+
+async function saveStoredConfig(config: GlucoseConfig) {
+    await resetStoredConfigs();
+
+    if (config.source === 'dexcom') {
+        await Keychain.setGenericPassword(config.username, config.password, {
+            service: 'glance.dexcom'
+        });
+        return;
+    }
+
+    if (config.source === 'nightscout') {
+        await Keychain.setGenericPassword('url', config.url, {
+            service: 'glance.nightscout'
+        });
+        return;
+    }
+
+    await Keychain.setGenericPassword('groupKey', config.groupKey, {
+        service: 'glance.xdripSync'
+    });
+}
+
 function App() {
     const { width, height } = useWindowDimensions();
     const [sessionId] = useState(() => `${Math.random().toString(36).slice(2, 10)}`);
@@ -65,16 +98,22 @@ function App() {
             let storedConfig: GlucoseConfig | null = null;
 
             try {
-                const dexcom = await Keychain.getGenericPassword({
-                    service: 'glance.dexcom'
-                });
+                if (GlucoseSync?.getConfig) {
+                    storedConfig = await GlucoseSync.getConfig();
+                }
 
-                if (dexcom && dexcom.username && dexcom.password) {
-                    storedConfig = {
-                        source: 'dexcom',
-                        username: dexcom.username,
-                        password: dexcom.password
-                    };
+                if (!storedConfig) {
+                    const dexcom = await Keychain.getGenericPassword({
+                        service: 'glance.dexcom'
+                    });
+
+                    if (dexcom && dexcom.username && dexcom.password) {
+                        storedConfig = {
+                            source: 'dexcom',
+                            username: dexcom.username,
+                            password: dexcom.password
+                        };
+                    }
                 }
 
                 if (!storedConfig) {
@@ -153,23 +192,7 @@ function App() {
                     return;
                 }
 
-                if (result.config.source === 'dexcom') {
-                    await Keychain.setGenericPassword(result.config.username, result.config.password, {
-                        service: 'glance.dexcom'
-                    });
-                }
-
-                if (result.config.source === 'nightscout') {
-                    await Keychain.setGenericPassword('url', result.config.url, {
-                        service: 'glance.nightscout'
-                    });
-                }
-
-                if (result.config.source === 'xdripSync') {
-                    await Keychain.setGenericPassword('groupKey', result.config.groupKey, {
-                        service: 'glance.xdripSync'
-                    });
-                }
+                await saveStoredConfig(result.config);
 
                 startNativeGlucoseSync(result.config);
                 setConfig(result.config);
@@ -203,29 +226,31 @@ function App() {
 
         let isMounted = true;
 
-        glucoseSync.refreshNow().catch(() => null);
+        const readCachedHistory = async () => {
+            const nativeHistory = await glucoseSync.getHistory(Math.min(240, GRAPH_RANGES[rangeIndex] + GRAPH_HISTORY_PADDING_MINUTES));
+            const status = await glucoseSync.getStatus();
+            const latest = nativeHistory[nativeHistory.length - 1];
+
+            if (!isMounted) {
+                return;
+            }
+
+            setHistory(nativeHistory);
+
+            if (latest) {
+                setReading(latest);
+                setDataMessage('');
+                return;
+            }
+
+            setReading(null);
+            const debugText = status.xdripDebug ? ` (${status.xdripDebug})` : '';
+            setDataMessage(status.lastError ? `동기화 실패 ${status.lastError}${debugText}` : `데이터 동기화 중${debugText}`);
+        };
 
         const loadNativeHistory = async () => {
             try {
-                const nativeHistory = await glucoseSync.getHistory(Math.min(240, GRAPH_RANGES[rangeIndex] + GRAPH_HISTORY_PADDING_MINUTES));
-                const status = await glucoseSync.getStatus();
-                const latest = nativeHistory[nativeHistory.length - 1];
-
-                if (!isMounted) {
-                    return;
-                }
-
-                setHistory(nativeHistory);
-
-                if (latest) {
-                    setReading(latest);
-                    setDataMessage('');
-                    return;
-                }
-
-                setReading(null);
-                const debugText = status.xdripDebug ? ` (${status.xdripDebug})` : '';
-                setDataMessage(status.lastError ? `동기화 실패 ${status.lastError}${debugText}` : `데이터 동기화 중${debugText}`);
+                await readCachedHistory();
             } catch {
                 if (isMounted) {
                     setDataMessage('네이티브 캐시 읽기 실패');
@@ -236,24 +261,22 @@ function App() {
 
         loadNativeHistory();
         const intervalId = setInterval(loadNativeHistory, CACHE_REFRESH_MILLIS);
+        const appStateSubscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+            if (nextState === 'active') {
+                loadNativeHistory();
+            }
+        });
 
         return () => {
             isMounted = false;
             clearInterval(intervalId);
+            appStateSubscription.remove();
         };
     }, [config, rangeIndex]);
 
     const disconnect = async () => {
         try {
-            await Keychain.resetGenericPassword({
-                service: 'glance.dexcom'
-            });
-            await Keychain.resetGenericPassword({
-                service: 'glance.nightscout'
-            });
-            await Keychain.resetGenericPassword({
-                service: 'glance.xdripSync'
-            });
+            await resetStoredConfigs();
         } catch {
             return;
         }

@@ -1,6 +1,7 @@
 {
     "name": "glance",
-    "version": "0.1.0",
+    "version": "0.1.1",
+    "androidVersionCode": 2,
     "private": true,
     "scripts": {
         "android": "react-native run-android",

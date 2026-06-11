@@ -20,6 +20,7 @@ type GlucoseSyncModule = {
     enableKeepScreenOn(): void;
     disableKeepScreenOn(): void;
     refreshNow(): Promise<number>;
+    getConfig(): Promise<GlucoseConfig | null>;
     getLatest(): Promise<NativeGlucoseReading | null>;
     getHistory(minutes: number): Promise<NativeGlucoseReading[]>;
     getStatus(): Promise<{

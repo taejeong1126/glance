@@ -2,6 +2,15 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+def getPackageJsonValue = { key ->
+    return providers.exec {
+        workingDir rootProject.projectDir.parentFile
+        commandLine "node", "-p", "require('./package.json').${key}"
+    }.standardOutput.asText.get().trim()
+}
+
+def appVersionName = getPackageJsonValue("version")
+def appVersionCode = getPackageJsonValue("androidVersionCode") as int
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -82,8 +91,9 @@ android {
         applicationId "com.glance"
         minSdkVersion 28
         targetSdkVersion 35
-        versionCode 1
-        versionName "1.0"
+
+        versionCode appVersionCode
+        versionName appVersionName
     }
     signingConfigs {
         debug {

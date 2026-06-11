@@ -134,9 +134,11 @@ class GlucoseRangeComplicationService : SuspendingComplicationDataSourceService(
 private fun SuspendingComplicationDataSourceService.latestFreshReading(): GlucoseReading? =
     GlucoseHistoryStore(this).use { store ->
       val source = currentConfiguredSource()
-      val latest = store.latest(source)?.takeIf {
-        System.currentTimeMillis() - it.timestampMillis <= STALE_AFTER_MILLIS
-      } ?: return@use null
+      val latest = store.latest(source)
+      if (latest == null || System.currentTimeMillis() - latest.timestampMillis > STALE_AFTER_MILLIS) {
+        ensureSyncServiceRunning()
+        return@use null
+      }
       val history = store.history(TREND_FALLBACK_WINDOW_MINUTES, source ?: latest.source)
       latest.withFallbackTrend(history)
     }
@@ -159,6 +161,22 @@ private fun SuspendingComplicationDataSourceService.currentConfiguredSource(): S
     ).getString(GlucoseForegroundService.KEY_CONFIG_JSON, null),
   )?.sourceName()
 
+private fun SuspendingComplicationDataSourceService.ensureSyncServiceRunning() {
+  val hasConfig = !getSharedPreferences(
+    GlucoseForegroundService.PREFS_NAME,
+    Context.MODE_PRIVATE,
+  ).getString(GlucoseForegroundService.KEY_CONFIG_JSON, null).isNullOrBlank()
+  if (!hasConfig) {
+    return
+  }
+
+  startForegroundService(
+    Intent(this, GlucoseForegroundService::class.java).apply {
+      action = GlucoseForegroundService.ACTION_ENSURE_RUNNING
+    },
+  )
+}
+
 private fun previewReading() =
   GlucoseReading(
     value = 123,
@@ -174,15 +192,16 @@ private fun GlucoseReading.withFallbackTrend(history: List<GlucoseReading>): Glu
 }
 
 private fun inferTrend(history: List<GlucoseReading>): String? {
-  if (history.size < 2) return null
+  if (history.size < 5) return null
 
-  val latest = history[history.lastIndex]
-  val previous = history[history.lastIndex - 1]
-  val minutes = (latest.timestampMillis - previous.timestampMillis) / 60_000.0
+  val recent = history.takeLast(5)
+  val first = recent.first()
+  val last = recent.last()
+  val minutes = (last.timestampMillis - first.timestampMillis) / 60_000.0
 
   if (minutes <= 0.0) return null
 
-  val deltaPerMinute = (latest.value - previous.value) / minutes
+  val deltaPerMinute = (last.value - first.value) / minutes
 
   return when {
     deltaPerMinute >= 3.0 -> "DoubleUp"

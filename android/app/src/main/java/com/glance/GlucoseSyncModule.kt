@@ -62,14 +62,25 @@ class GlucoseSyncModule(
           prefs.getString(GlucoseForegroundService.KEY_CONFIG_JSON, null),
         ) ?: throw IllegalStateException("missing_config")
 
-        val readings = clientFor(config).fetchHistory(config, 240)
-
-        if (readings.isNotEmpty()) {
-          GlucoseHistoryStore(reactContext).use { store ->
-            store.upsert(readings)
-            store.deleteOlderThan(System.currentTimeMillis() - 6 * 60 * 60 * 1000L)
+        val readings = GlucoseHistoryStore(reactContext).use { store ->
+          val previousLatest = store.latest(config.sourceName())
+          val fetched = if (previousLatest == null) {
+            clientFor(config).fetchHistory(config, 240)
+          } else {
+            listOfNotNull(clientFor(config).fetchLatest(config))
+              .filter { latest -> hasReadingChanged(previousLatest, latest) }
           }
-          requestComplicationUpdates()
+
+          if (fetched.isNotEmpty()) {
+            store.upsert(fetched)
+            store.deleteOlderThan(System.currentTimeMillis() - 6 * 60 * 60 * 1000L)
+            val latestReading = fetched.maxByOrNull { it.timestampMillis }
+            if (latestReading != null && hasReadingChanged(previousLatest, latestReading)) {
+              requestComplicationUpdates()
+            }
+          }
+
+          fetched
         }
 
         prefs.edit()
@@ -99,6 +110,42 @@ class GlucoseSyncModule(
       promise.resolve(reading?.toMap())
     } catch (error: Throwable) {
       promise.reject("glucose_latest_failed", error)
+    }
+  }
+
+  @ReactMethod
+  fun getConfig(promise: Promise) {
+    try {
+      val prefs = reactContext.getSharedPreferences(
+        GlucoseForegroundService.PREFS_NAME,
+        Context.MODE_PRIVATE,
+      )
+      val config = parseGlucoseConfig(
+        prefs.getString(GlucoseForegroundService.KEY_CONFIG_JSON, null),
+      ) ?: run {
+        promise.resolve(null)
+        return
+      }
+
+      promise.resolve(
+        WritableNativeMap().apply {
+          putString("source", config.sourceName())
+          when (config) {
+            is GlucoseConfig.Dexcom -> {
+              putString("username", config.username)
+              putString("password", config.password)
+            }
+            is GlucoseConfig.Nightscout -> {
+              putString("url", config.url)
+            }
+            is GlucoseConfig.XdripSync -> {
+              putString("groupKey", config.groupKey)
+            }
+          }
+        },
+      )
+    } catch (error: Throwable) {
+      promise.reject("glucose_config_failed", error)
     }
   }
 
@@ -181,4 +228,9 @@ class GlucoseSyncModule(
       ).requestUpdateAll()
     }
   }
+
+  private fun hasReadingChanged(previous: GlucoseReading?, current: GlucoseReading): Boolean =
+    previous?.timestampMillis != current.timestampMillis ||
+      previous?.value != current.value ||
+      previous?.trend != current.trend
 }

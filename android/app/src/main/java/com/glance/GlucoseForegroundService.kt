@@ -8,7 +8,6 @@ import android.content.ComponentName
 import android.content.Intent
 import android.os.IBinder
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
@@ -16,6 +15,8 @@ import java.util.concurrent.TimeUnit
 class GlucoseForegroundService : Service() {
   private var pollExecutor: ScheduledExecutorService? = null
   @Volatile private var syncGeneration = 0L
+  @Volatile private var xdripFailureCount = 0
+  @Volatile private var xdripBackoffUntilMillis = 0L
 
   override fun onCreate() {
     super.onCreate()
@@ -23,16 +24,24 @@ class GlucoseForegroundService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    startForeground(NOTIFICATION_ID, buildNotification("혈당 동기화 실행 중"))
-
-    stopSyncWorkers()
-
     val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
     val config = parseGlucoseConfig(prefs.getString(KEY_CONFIG_JSON, null))
+    if (config == null) {
+      stopSelf()
+      return START_NOT_STICKY
+    }
+
+    val action = intent?.action
+    if (action == ACTION_ENSURE_RUNNING && pollExecutor != null && !shouldForceRestart()) {
+      return START_STICKY
+    }
+
+    startForeground(NOTIFICATION_ID, buildNotification("혈당 동기화 실행 중"))
+    stopSyncWorkers()
 
     if (config is GlucoseConfig.XdripSync) {
       startXdripPolling(config)
-    } else if (config != null) {
+    } else {
       pollExecutor = Executors.newSingleThreadScheduledExecutor()
       pollExecutor?.scheduleWithFixedDelay(
         { syncOnce() },
@@ -58,26 +67,27 @@ class GlucoseForegroundService : Service() {
   }
 
   private fun saveXdripReading(reading: GlucoseReading, generation: Long) {
-    if (syncGeneration != generation) return
-
-    val now = System.currentTimeMillis()
-    if (reading.timestampMillis < now - XDRIP_MAX_READING_AGE_MS ||
-      reading.timestampMillis > now + XDRIP_FUTURE_TOLERANCE_MS
-    ) {
+    if (syncGeneration != generation) {
+      saveDebug("skip_generation")
       return
     }
 
     GlucoseHistoryStore(this).use { store ->
+      val previousLatest = store.latest("xdripSync")
       store.upsert(listOf(reading))
       store.deleteOlderThan(System.currentTimeMillis() - 6 * 60 * 60 * 1000L)
+      markSyncSuccessful()
+      if (hasReadingChanged(previousLatest, reading)) {
+        requestComplicationUpdates()
+      } else {
+        saveDebug("saved_same_timestamp")
+      }
     }
-
-    markSyncSuccessful()
-    requestComplicationUpdates()
   }
 
   private fun syncXdripOnce(config: GlucoseConfig.XdripSync, generation: Long) {
     if (syncGeneration != generation || Thread.currentThread().isInterrupted) return
+    if (System.currentTimeMillis() < xdripBackoffUntilMillis) return
 
     try {
       val newerThanMillis = GlucoseHistoryStore(this).use { store ->
@@ -91,9 +101,13 @@ class GlucoseForegroundService : Service() {
 
       if (reading != null) {
         saveXdripReading(reading, generation)
+      } else {
+        saveDebug("decoded_but_no_reading")
+        markSyncSuccessful()
       }
     } catch (error: Throwable) {
       if (syncGeneration == generation) {
+        scheduleXdripBackoff()
         saveSyncError(error)
       }
     }
@@ -106,14 +120,23 @@ class GlucoseForegroundService : Service() {
 
     try {
       val client = clientFor(config)
-      val readings = client.fetchHistory(config, 240)
+      val previousLatest = store.latest(config.sourceName())
+      val readings = if (previousLatest == null) {
+        client.fetchHistory(config, 240)
+      } else {
+        listOfNotNull(client.fetchLatest(config))
+          .filter { latest -> hasReadingChanged(previousLatest, latest) }
+      }
 
       if (readings.isNotEmpty()) {
         store.upsert(readings)
         store.deleteOlderThan(System.currentTimeMillis() - 6 * 60 * 60 * 1000L)
-        requestComplicationUpdates()
-        markSyncSuccessful()
+        val latestReading = readings.maxByOrNull { it.timestampMillis }
+        if (latestReading != null && hasReadingChanged(previousLatest, latestReading)) {
+          requestComplicationUpdates()
+        }
       }
+      markSyncSuccessful()
     } catch (error: Throwable) {
       saveSyncError(error)
     } finally {
@@ -122,6 +145,8 @@ class GlucoseForegroundService : Service() {
   }
 
   private fun markSyncSuccessful() {
+    xdripFailureCount = 0
+    xdripBackoffUntilMillis = 0L
     getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
       .edit()
       .putString(KEY_XDRIP_DEBUG, "saved")
@@ -139,11 +164,37 @@ class GlucoseForegroundService : Service() {
       .apply()
   }
 
+  private fun saveDebug(value: String) {
+    getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+      .edit()
+      .putString(KEY_XDRIP_DEBUG, value)
+      .apply()
+  }
+
   private fun stopSyncWorkers() {
     syncGeneration += 1
+    xdripFailureCount = 0
+    xdripBackoffUntilMillis = 0L
     XdripSyncClient.closeStream()
     pollExecutor?.shutdownNow()
     pollExecutor = null
+  }
+
+  private fun scheduleXdripBackoff() {
+    xdripFailureCount = (xdripFailureCount + 1).coerceAtMost(MAX_XDRIP_BACKOFF_STEPS)
+    val backoffSeconds = XDRIP_POLL_INTERVAL_SECONDS * (1L shl (xdripFailureCount - 1))
+    xdripBackoffUntilMillis = System.currentTimeMillis() + backoffSeconds.coerceAtMost(MAX_XDRIP_BACKOFF_SECONDS) * 1000L
+  }
+
+  private fun hasReadingChanged(previous: GlucoseReading?, current: GlucoseReading): Boolean =
+    previous?.timestampMillis != current.timestampMillis ||
+      previous?.value != current.value ||
+      previous?.trend != current.trend
+
+  private fun shouldForceRestart(): Boolean {
+    val lastSyncAt = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+      .getLong(KEY_LAST_SYNC_AT, 0L)
+    return lastSyncAt <= 0L || System.currentTimeMillis() - lastSyncAt > FORCE_RESTART_AFTER_MILLIS
   }
 
   private fun requestComplicationUpdates() {
@@ -192,10 +243,12 @@ class GlucoseForegroundService : Service() {
     const val KEY_LAST_ERROR = "last_error"
     const val KEY_LAST_SYNC_AT = "last_sync_at"
     const val KEY_XDRIP_DEBUG = "xdrip_debug"
-    private const val DEFAULT_POLL_INTERVAL_SECONDS = 220L
-    private const val XDRIP_POLL_INTERVAL_SECONDS = 100L
-    private const val XDRIP_SNAPSHOT_TIMEOUT_MS = 20_000L
-    private const val XDRIP_MAX_READING_AGE_MS = 6 * 60 * 60 * 1000L
-    private const val XDRIP_FUTURE_TOLERANCE_MS = 2 * 60 * 1000L
+    const val ACTION_ENSURE_RUNNING = "com.glance.action.ENSURE_RUNNING"
+    private const val DEFAULT_POLL_INTERVAL_SECONDS = 300L
+    private const val XDRIP_POLL_INTERVAL_SECONDS = 300L
+    private const val XDRIP_SNAPSHOT_TIMEOUT_MS = XdripSyncClient.DEFAULT_SNAPSHOT_TIMEOUT_MS
+    private const val MAX_XDRIP_BACKOFF_STEPS = 4
+    private const val MAX_XDRIP_BACKOFF_SECONDS = 60L * 60L
+    private const val FORCE_RESTART_AFTER_MILLIS = 6 * 60 * 1000L
   }
 }

@@ -22,11 +22,15 @@ interface GlucoseClient {
 
 object NightscoutClient : GlucoseClient {
   override fun fetchLatest(config: GlucoseConfig): GlucoseReading? =
-    fetchHistory(config, 5).firstOrNull()
+    fetchReadings(config, count = 1).lastOrNull()
 
   override fun fetchHistory(config: GlucoseConfig, minutes: Int): List<GlucoseReading> {
-    val nightscout = config as? GlucoseConfig.Nightscout ?: return emptyList()
     val count = ((minutes.coerceIn(1, 240) / 5) + 2).coerceAtLeast(1)
+    return fetchReadings(config, count)
+  }
+
+  private fun fetchReadings(config: GlucoseConfig, count: Int): List<GlucoseReading> {
+    val nightscout = config as? GlucoseConfig.Nightscout ?: return emptyList()
     val body = httpGet("${nightscout.url.trimEnd('/')}/api/v1/entries/sgv.json?count=$count")
     val entries = JSONArray(body)
     val readings = mutableListOf<GlucoseReading>()
@@ -59,19 +63,23 @@ object DexcomClient : GlucoseClient {
   private const val BASE_URL = "https://shareous1.dexcom.com/ShareWebServices/Services"
 
   override fun fetchLatest(config: GlucoseConfig): GlucoseReading? =
-    fetchHistory(config, 240).lastOrNull()
+    fetchReadings(config, minutes = 1440, count = 1).lastOrNull()
 
   override fun fetchHistory(config: GlucoseConfig, minutes: Int): List<GlucoseReading> {
+    val count = ((minutes.coerceIn(1, 240) / 5) + 2).coerceIn(1, 50)
+    return fetchReadings(config, minutes.coerceIn(1, 1440), count)
+  }
+
+  private fun fetchReadings(config: GlucoseConfig, minutes: Int, count: Int): List<GlucoseReading> {
     val dexcom = config as? GlucoseConfig.Dexcom ?: return emptyList()
     val sessionId = authenticate(dexcom.username, dexcom.password)
-    val count = ((minutes.coerceIn(1, 240) / 5) + 2).coerceIn(1, 50)
     val requestBody = JSONObject()
       .put("sessionId", sessionId)
-      .put("minutes", minutes.coerceIn(1, 1440))
+      .put("minutes", minutes)
       .put("maxCount", count)
     val requestQuery = mapOf(
       "sessionId" to sessionId,
-      "minutes" to minutes.coerceIn(1, 1440).toString(),
+      "minutes" to minutes.toString(),
       "maxCount" to count.toString(),
     )
     val readings = try {
@@ -185,7 +193,6 @@ object XdripSyncClient : GlucoseClient {
   private const val HOST = "jamcm3749021.bluejay.website"
   private const val PORT = 25935
   private const val STATIC_KEY = "ebe5c0df162a50ba232d2d721ea8e3e1c5423bb0-12bd-48c3-8932-c93883dfcf1f"
-  private const val READ_TIMEOUT_MS = 10 * 60 * 1000L
   private const val FRESH_READING_MS = 15 * 60 * 1000
   private const val TRANSPORT_SYNC_MSG = 2
   @Volatile private var activeSocket: Socket? = null
@@ -194,7 +201,7 @@ object XdripSyncClient : GlucoseClient {
     fetchLatestAfter(config, 0L)
 
   fun fetchLatestAfter(config: GlucoseConfig, newerThanMillis: Long): GlucoseReading? {
-    return fetchLatestAfter(config, newerThanMillis, READ_TIMEOUT_MS)
+    return fetchLatestAfter(config, newerThanMillis, DEFAULT_SNAPSHOT_TIMEOUT_MS)
   }
 
   fun fetchLatestAfter(config: GlucoseConfig, newerThanMillis: Long, timeoutMs: Long): GlucoseReading? {
@@ -205,14 +212,11 @@ object XdripSyncClient : GlucoseClient {
       config = config,
       shouldContinue = { System.currentTimeMillis() < deadline },
       onReading = { reading ->
-        if (reading.timestampMillis > newerThanMillis &&
-          reading.timestampMillis > (bestReading?.timestampMillis ?: Long.MIN_VALUE)
-        ) {
+        if (reading.timestampMillis > (bestReading?.timestampMillis ?: Long.MIN_VALUE)) {
           bestReading = reading
         }
 
-        reading.timestampMillis > newerThanMillis &&
-          reading.timestampMillis >= System.currentTimeMillis() - FRESH_READING_MS
+        bestReading != null
       },
     )
 
@@ -384,6 +388,8 @@ object XdripSyncClient : GlucoseClient {
   fun attachContext(context: Context) {
     appContext = context.applicationContext
   }
+
+  const val DEFAULT_SNAPSHOT_TIMEOUT_MS = 12_000L
 
   private fun handleBinary(binary: ByteArray, header: Header?, aesKey: ByteArray): List<GlucoseReading> {
     if (header?.cmd != "M") return emptyList()
