@@ -121,16 +121,33 @@ function SetupForm() {
 
                     <div className="mt-7 space-y-5">
                         {source === 'nightscout' ? (
-                            <Field label="Nightscout URL" hint="사이트 주소 끝의 /는 자동으로 제거됩니다.">
-                                <input
-                                    className="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm outline-none placeholder:text-zinc-400 focus:border-zinc-950"
-                                    inputMode="url"
-                                    onChange={(event) => setUrl(event.target.value)}
-                                    placeholder="https://example.com"
-                                    type="url"
-                                    value={url}
-                                />
-                            </Field>
+                            <>
+                                <Field label="Nightscout URL" hint="사이트 주소 끝의 /는 자동으로 제거됩니다.">
+                                    <input
+                                        className="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 text-sm outline-none placeholder:text-zinc-400 focus:border-zinc-950"
+                                        inputMode="url"
+                                        onChange={(event) => setUrl(event.target.value)}
+                                        placeholder="https://example.com"
+                                        type="url"
+                                        value={url}
+                                    />
+                                </Field>
+
+                                <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-700">
+                                    <p className="font-semibold text-zinc-900">Nightscout 설정 안내</p>
+
+                                    <p className="mt-1">Nightscout 사이트에서 혈당 데이터를 인터넷으로 수신해 워치에 표시합니다.</p>
+
+                                    <p className="mt-2">
+                                        Glance에서 사용하려면 Nightscout 사이트가 <strong>API Secret 없이 혈당 데이터를 조회할 수 있도록</strong> 설정되어
+                                        있어야 합니다.
+                                    </p>
+
+                                    <p className="mt-2">
+                                        사용 중인 <strong>Nightscout 주소</strong>를 입력해 주세요.
+                                    </p>
+                                </div>
+                            </>
                         ) : null}
 
                         {source === 'dexcom' ? (
@@ -154,36 +171,56 @@ function SetupForm() {
                                     />
                                 </Field>
 
-                                <div className="text-sm">
-                                    현재 <strong>미국 외 지역(ous)</strong> 에서 생성된 Dexcom 계정만 사용할 수 있습니다. <strong>(jp 불가)</strong>
+                                <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-700">
+                                    <p className="font-semibold text-zinc-900">Dexcom Share 설정 안내</p>
+
+                                    <p className="mt-1">Dexcom Share 데이터를 인터넷으로 수신해 워치에 표시합니다.</p>
+
+                                    <p className="mt-2">
+                                        먼저 Dexcom 앱에서 <strong>공유 기능</strong>을 켜고, 혈당을 확인할 수 있는 <strong>Dexcom Follow 계정</strong> 정보를
+                                        입력해 주세요.
+                                    </p>
+
+                                    <p className="mt-2">
+                                        현재 <strong>미국 외 지역</strong>의 Dexcom Share 계정만 사용할 수 있습니다.
+                                    </p>
                                 </div>
                             </>
                         ) : null}
 
                         {source === 'xdripSync' ? (
                             <>
-                                <div className="rounded-lg bg-zinc-100 px-3 py-3 text-sm leading-6 text-zinc-700">
-                                    xDrip+ 앱에서 <strong>User Xdrip Cloud</strong>를 활성화하고 <strong>마스터</strong>를 활성화해 주세요.
-                                </div>
-
-                                <Field label="xDrip+ 핸드셋 그룹 키" hint="xDrip Sync에서 사용하는 그룹 키를 입력하세요.">
+                                <Field label="xDrip+ 그룹 키" hint="xDrip+ Sync에서 사용하는 그룹 키를 입력하세요.">
                                     <input
                                         autoCapitalize="characters"
                                         autoComplete="off"
                                         className="h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 font-mono text-sm outline-none placeholder:text-zinc-400 focus:border-zinc-950"
                                         onChange={(event) => setGroupKey(event.target.value)}
-                                        placeholder="DEAasdA479AF4B6123B66282BF"
+                                        placeholder="예: DEA00CCE0D53CEA479AF4B6EB66282BF"
                                         spellCheck={false}
                                         type="text"
                                         value={groupKey}
                                     />
                                 </Field>
 
-                                <div className="text-sm">
-                                    <strong>xDrip+ Sync</strong>는 소켓 통신 방식의 특성상 Dexcom Share, Nightscout 등의 연동 방식보다{' '}
-                                    <strong>배터리 사용량</strong>이 많을 수 있습니다.
-                                    <br />
-                                    또한 여러 기기를 동시에 연결할 경우 데이터 수신이 지연되거나 불안정해질 수 있습니다.
+                                <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-700">
+                                    <p className="font-semibold text-zinc-900">xDrip+ Sync 설정 안내</p>
+
+                                    <p className="mt-1">xDrip+ Sync는 xDrip+ Cloud 데이터를 인터넷으로 직접 수신하는 연동 방식입니다.</p>
+
+                                    <p className="mt-1">
+                                        xDrip+ 앱에서 <strong>User xDrip Cloud</strong>를 활성화한 뒤,
+                                        <strong> Master</strong> 모드를 켜 주세요.
+                                    </p>
+
+                                    <p className="mt-2">
+                                        소켓 통신 특성상 Dexcom Share, Nightscout보다 배터리 사용량이 많거나 수신이 불안정할 수 있으며, 경우에 따라{' '}
+                                        <strong>15분 이상의 시간차</strong>가 발생할 수 있습니다.
+                                    </p>
+
+                                    <p className="mt-2">
+                                        안정적인 혈당 수신을 원한다면 가능하면 <strong>Nightscout</strong> 연동 방식을 권장합니다.
+                                    </p>
                                 </div>
                             </>
                         ) : null}
