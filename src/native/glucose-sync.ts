@@ -25,6 +25,7 @@ type GlucoseSyncModule = {
     getHistory(minutes: number): Promise<NativeGlucoseReading[]>;
     getStatus(): Promise<{
         lastSyncAt: number;
+        lastSuccessAt: number;
         lastError?: string | null;
         xdripDebug?: string | null;
     }>;

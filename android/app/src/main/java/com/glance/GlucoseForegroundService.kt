@@ -27,18 +27,41 @@ class GlucoseForegroundService : Service() {
     val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
     val config = parseGlucoseConfig(prefs.getString(KEY_CONFIG_JSON, null))
     if (config == null) {
+      GlucoseSyncWatchdogWorker.cancel(this)
       stopSelf()
       return START_NOT_STICKY
     }
 
+    GlucoseSyncWatchdogWorker.schedule(this)
+
     val action = intent?.action
+    if (action == ACTION_REFRESH_NOW) {
+      startForeground(NOTIFICATION_ID, buildNotification("혈당 동기화 실행 중"))
+      if (pollExecutor == null || shouldForceRestart()) {
+        stopSyncWorkers()
+        startSyncWorkers(config)
+      }
+      if (config !is GlucoseConfig.XdripSync) {
+        triggerImmediateSync(config, ignoreBackoff = true)
+      }
+      return START_STICKY
+    }
+
     if (action == ACTION_ENSURE_RUNNING && pollExecutor != null && !shouldForceRestart()) {
+      if (config !is GlucoseConfig.XdripSync && shouldRunImmediateRecovery()) {
+        triggerImmediateSync(config, ignoreBackoff = true)
+      }
       return START_STICKY
     }
 
     startForeground(NOTIFICATION_ID, buildNotification("혈당 동기화 실행 중"))
     stopSyncWorkers()
+    startSyncWorkers(config)
 
+    return START_STICKY
+  }
+
+  private fun startSyncWorkers(config: GlucoseConfig) {
     if (config is GlucoseConfig.XdripSync) {
       startXdripPolling(config)
     } else {
@@ -50,8 +73,6 @@ class GlucoseForegroundService : Service() {
         TimeUnit.SECONDS,
       )
     }
-
-    return START_STICKY
   }
 
   private fun startXdripPolling(config: GlucoseConfig.XdripSync) {
@@ -85,9 +106,9 @@ class GlucoseForegroundService : Service() {
     }
   }
 
-  private fun syncXdripOnce(config: GlucoseConfig.XdripSync, generation: Long) {
+  private fun syncXdripOnce(config: GlucoseConfig.XdripSync, generation: Long, ignoreBackoff: Boolean = false) {
     if (syncGeneration != generation || Thread.currentThread().isInterrupted) return
-    if (System.currentTimeMillis() < xdripBackoffUntilMillis) return
+    if (!ignoreBackoff && System.currentTimeMillis() < xdripBackoffUntilMillis) return
 
     try {
       val newerThanMillis = GlucoseHistoryStore(this).use { store ->
@@ -152,6 +173,7 @@ class GlucoseForegroundService : Service() {
       .putString(KEY_XDRIP_DEBUG, "saved")
       .putString(KEY_LAST_ERROR, null)
       .putLong(KEY_LAST_SYNC_AT, System.currentTimeMillis())
+      .putLong(KEY_LAST_SUCCESS_AT, System.currentTimeMillis())
       .apply()
   }
 
@@ -192,9 +214,40 @@ class GlucoseForegroundService : Service() {
       previous?.trend != current.trend
 
   private fun shouldForceRestart(): Boolean {
-    val lastSyncAt = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-      .getLong(KEY_LAST_SYNC_AT, 0L)
-    return lastSyncAt <= 0L || System.currentTimeMillis() - lastSyncAt > FORCE_RESTART_AFTER_MILLIS
+    val lastSuccessAt = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+      .getLong(KEY_LAST_SUCCESS_AT, 0L)
+    val backoffRemainingMillis = xdripBackoffUntilMillis - System.currentTimeMillis()
+    return lastSuccessAt <= 0L ||
+      System.currentTimeMillis() - lastSuccessAt > FORCE_RESTART_AFTER_MILLIS ||
+      backoffRemainingMillis > MAX_ALLOWED_BACKOFF_REMAINING_MILLIS
+  }
+
+  private fun shouldRunImmediateRecovery(): Boolean {
+    val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+    val lastSuccessAt = prefs.getLong(KEY_LAST_SUCCESS_AT, 0L)
+    val lastRecoveryAt = prefs.getLong(KEY_LAST_RECOVERY_AT, 0L)
+    val now = System.currentTimeMillis()
+    return lastSuccessAt <= 0L ||
+      now - lastSuccessAt > STALE_RECOVERY_AFTER_MILLIS &&
+      now - lastRecoveryAt > MIN_RECOVERY_INTERVAL_MILLIS
+  }
+
+  private fun triggerImmediateSync(config: GlucoseConfig, ignoreBackoff: Boolean) {
+    getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+      .edit()
+      .putLong(KEY_LAST_RECOVERY_AT, System.currentTimeMillis())
+      .apply()
+
+    val executor = pollExecutor ?: Executors.newSingleThreadScheduledExecutor().also {
+      pollExecutor = it
+    }
+    val generation = syncGeneration
+    executor.execute {
+      when (config) {
+        is GlucoseConfig.XdripSync -> syncXdripOnce(config, generation, ignoreBackoff = ignoreBackoff)
+        else -> syncOnce()
+      }
+    }
   }
 
   private fun requestComplicationUpdates() {
@@ -242,13 +295,19 @@ class GlucoseForegroundService : Service() {
     const val KEY_CONFIG_JSON = "config_json"
     const val KEY_LAST_ERROR = "last_error"
     const val KEY_LAST_SYNC_AT = "last_sync_at"
+    const val KEY_LAST_SUCCESS_AT = "last_success_at"
+    const val KEY_LAST_RECOVERY_AT = "last_recovery_at"
     const val KEY_XDRIP_DEBUG = "xdrip_debug"
     const val ACTION_ENSURE_RUNNING = "com.glance.action.ENSURE_RUNNING"
+    const val ACTION_REFRESH_NOW = "com.glance.action.REFRESH_NOW"
     private const val DEFAULT_POLL_INTERVAL_SECONDS = 300L
     private const val XDRIP_POLL_INTERVAL_SECONDS = 300L
     private const val XDRIP_SNAPSHOT_TIMEOUT_MS = XdripSyncClient.DEFAULT_SNAPSHOT_TIMEOUT_MS
     private const val MAX_XDRIP_BACKOFF_STEPS = 4
-    private const val MAX_XDRIP_BACKOFF_SECONDS = 60L * 60L
-    private const val FORCE_RESTART_AFTER_MILLIS = 6 * 60 * 1000L
+    private const val MAX_XDRIP_BACKOFF_SECONDS = 20L * 60L
+    private const val FORCE_RESTART_AFTER_MILLIS = 10 * 60 * 1000L
+    private const val MAX_ALLOWED_BACKOFF_REMAINING_MILLIS = 10 * 60 * 1000L
+    private const val STALE_RECOVERY_AFTER_MILLIS = 15 * 60 * 1000L
+    private const val MIN_RECOVERY_INTERVAL_MILLIS = 5 * 60 * 1000L
   }
 }

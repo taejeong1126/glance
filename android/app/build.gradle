@@ -120,6 +120,7 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.wear.watchface:watchface-complications-data-source-ktx:1.2.1")
 
     if (hermesEnabled.toBoolean()) {

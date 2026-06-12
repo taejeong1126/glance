@@ -136,7 +136,11 @@ private fun SuspendingComplicationDataSourceService.latestFreshReading(): Glucos
       val source = currentConfiguredSource()
       val latest = store.latest(source)
       if (latest == null || System.currentTimeMillis() - latest.timestampMillis > STALE_AFTER_MILLIS) {
-        ensureSyncServiceRunning()
+        if (source == "xdripSync") {
+          ensureSyncServiceRunning()
+        } else {
+          requestImmediateRecovery()
+        }
         return@use null
       }
       val history = store.history(TREND_FALLBACK_WINDOW_MINUTES, source ?: latest.source)
@@ -173,6 +177,27 @@ private fun SuspendingComplicationDataSourceService.ensureSyncServiceRunning() {
   startForegroundService(
     Intent(this, GlucoseForegroundService::class.java).apply {
       action = GlucoseForegroundService.ACTION_ENSURE_RUNNING
+    },
+  )
+}
+
+private fun SuspendingComplicationDataSourceService.requestImmediateRecovery() {
+  val prefs = getSharedPreferences(
+    GlucoseForegroundService.PREFS_NAME,
+    Context.MODE_PRIVATE,
+  )
+  val lastRecoveryAt = prefs.getLong(GlucoseForegroundService.KEY_LAST_RECOVERY_AT, 0L)
+  val now = System.currentTimeMillis()
+
+  ensureSyncServiceRunning()
+
+  if (now - lastRecoveryAt < 5 * 60 * 1000L) {
+    return
+  }
+
+  startForegroundService(
+    Intent(this, GlucoseForegroundService::class.java).apply {
+      action = GlucoseForegroundService.ACTION_REFRESH_NOW
     },
   )
 }

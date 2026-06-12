@@ -26,16 +26,19 @@ class GlucoseSyncModule(
       .edit()
       .putString(GlucoseForegroundService.KEY_CONFIG_JSON, configJson)
       .apply()
+    GlucoseSyncWatchdogWorker.schedule(reactContext)
   }
 
   @ReactMethod
   fun start() {
     val intent = Intent(reactContext, GlucoseForegroundService::class.java)
+    GlucoseSyncWatchdogWorker.schedule(reactContext)
     reactContext.startForegroundService(intent)
   }
 
   @ReactMethod
   fun stop() {
+    GlucoseSyncWatchdogWorker.cancel(reactContext)
     reactContext.stopService(Intent(reactContext, GlucoseForegroundService::class.java))
   }
 
@@ -86,6 +89,7 @@ class GlucoseSyncModule(
         prefs.edit()
           .putString(GlucoseForegroundService.KEY_LAST_ERROR, null)
           .putLong(GlucoseForegroundService.KEY_LAST_SYNC_AT, System.currentTimeMillis())
+          .putLong(GlucoseForegroundService.KEY_LAST_SUCCESS_AT, System.currentTimeMillis())
           .apply()
 
         promise.resolve(readings.size.toDouble())
@@ -171,6 +175,7 @@ class GlucoseSyncModule(
     promise.resolve(
       WritableNativeMap().apply {
         putDouble("lastSyncAt", prefs.getLong(GlucoseForegroundService.KEY_LAST_SYNC_AT, 0L).toDouble())
+        putDouble("lastSuccessAt", prefs.getLong(GlucoseForegroundService.KEY_LAST_SUCCESS_AT, 0L).toDouble())
         putString("lastError", prefs.getString(GlucoseForegroundService.KEY_LAST_ERROR, null))
         putString("xdripDebug", prefs.getString(GlucoseForegroundService.KEY_XDRIP_DEBUG, null))
       },

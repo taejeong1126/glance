@@ -6,8 +6,8 @@ import android.content.Intent
 
 class GlucoseStartupReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent?) {
-    val action = intent?.action ?: return
-    if (action != Intent.ACTION_BOOT_COMPLETED && action != Intent.ACTION_MY_PACKAGE_REPLACED) {
+    val receivedAction = intent?.action ?: return
+    if (receivedAction != Intent.ACTION_BOOT_COMPLETED && receivedAction != Intent.ACTION_MY_PACKAGE_REPLACED) {
       return
     }
 
@@ -20,6 +20,11 @@ class GlucoseStartupReceiver : BroadcastReceiver() {
       return
     }
 
-    context.startForegroundService(Intent(context, GlucoseForegroundService::class.java))
+    GlucoseSyncWatchdogWorker.schedule(context)
+    context.startForegroundService(
+      Intent(context, GlucoseForegroundService::class.java).apply {
+        action = GlucoseForegroundService.ACTION_ENSURE_RUNNING
+      },
+    )
   }
 }
